@@ -1,12 +1,25 @@
+"""
+NQMIX: Non-Monotonic Q-Value Mixing for Continuous Action Spaces
+
+Implementation of Algorithm 2 from:
+"QMIX: Monotonic Value Function Factorisation for Deep Multi-Agent Reinforcement Learning"
+Extended to continuous actions with non-monotonic mixing as per NQMIX paper.
+
+Key innovations:
+- Non-monotonic mixing network (allows negative gradients ∂Q_tot/∂Q_a)
+- Sign-based actor gradient for proper credit assignment
+- Works with continuous action spaces
+"""
+
 import torch
 import torch.nn as nn
 import numpy as np
-from typing import List, Tuple, Dict
+from typing import List, Tuple
 
 from src.networks import AgentNetwork, MixingNetwork
 from src.memory import ReplayBuffer
-
 from src.agents.base_agent import BaseAgent
+
 
 class NQMIX(BaseAgent):
     """
@@ -176,12 +189,16 @@ class NQMIX(BaseAgent):
         # ======================================================================
         # REPLAY BUFFER (stores complete episodes for off-policy learning)
         # ======================================================================
-        self.replay_buffer = ReplayBuffer(buffer_capacity)
+        self._replay_buffer = ReplayBuffer(buffer_capacity)
 
         # Paper: Uses ~5000 capacity for experiments
         # Stores episodes: {observations, actions, rewards, states}
         # Enables off-policy learning: learn from old policy's experience
 
+    @property
+    def replay_buffer(self):
+        """Access to replay buffer (required by BaseAgent)."""
+        return self._replay_buffer
     
     def _hard_update(self, target_nets, eval_nets):
         """
@@ -254,11 +271,6 @@ class NQMIX(BaseAgent):
         # Provides stability: TD target doesn't change drastically
 
 
-print("✓ NQMIX class defined (Part 1 - Initialization)")
-
-
-class NQMIX(NQMIX):  # Extend the base class
-
     def select_actions(
             self,
             observations: List[np.ndarray],
@@ -266,7 +278,7 @@ class NQMIX(NQMIX):  # Extend the base class
             hiddens: List[torch.Tensor],
             explore: bool = True,
             noise_scale: float = 0.1
-    ):
+    ) -> Tuple[List[np.ndarray], List[torch.Tensor]]:
         """
         Select actions using deterministic policy with optional exploration noise.
         Corresponds to Algorithm 2, Line 2: u_t^a = μ_a(τ_t^a|θ) + noise
@@ -627,4 +639,6 @@ class NQMIX(NQMIX):  # Extend the base class
         self.mixer_eval.load_state_dict(checkpoint['mixer_eval'])
         self.mixer_target.load_state_dict(checkpoint['mixer_target'])
 
-print("✓ NQMIX Algorithm 2 implementation complete (with sign-based gradient)")
+
+
+print("✓ NQMIX Algorithm 2 implementation complete (with sign-based gradient)")    

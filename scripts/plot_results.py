@@ -1,274 +1,267 @@
 """
-Script to plot training results and create comparison visualizations.
+Plot training results from log files.
 
 Usage:
-    # Plot single training run
-    python scripts/plot_results.py --log results/checkpoints/train.log --output results/plots/
-
-    # Compare multiple algorithms
-    python scripts/plot_results.py --logs results/nqmix/train.log results/facmac/train.log --labels NQMIX FACMAC --output results/plots/comparison.png
+    python scripts/plot_results.py --log results/nqmix_humanoid/training.log
+    python scripts/plot_results.py --log results/nqmix_humanoid/training.log --output results/nqmix_humanoid/plots
 """
 
 import argparse
 import re
+import sys
 from pathlib import Path
-from typing import List, Dict, Tuple
 
 import matplotlib.pyplot as plt
-import seaborn as sns
 import numpy as np
 
-# Set plot style
-sns.set_style("whitegrid")
-sns.set_palette("husl")
+# Add project root to path
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
 
-def parse_log_file(log_path: str) -> Dict[str, List]:
+def parse_log_file(log_path: str) -> dict:
     """
-    Parse training log file to extract metrics.
+    Parse training log file and extract metrics.
 
-    Expected log format:
-    Episode 100 | Reward: 1234.56 | Avg(100): 1200.00 | Length: 500 | Loss: 0.123 | Buffer: 100 | Time: 12.3s
+    Args:
+        log_path: Path to the training log file
 
     Returns:
-        Dictionary with lists of episodes, rewards, avg_rewards, lengths, losses
+        Dictionary with lists of metrics
     """
-    episodes = []
-    rewards = []
-    avg_rewards = []
-    lengths = []
-    losses = []
-
-    with open(log_path, 'r') as f:
-        for line in f:
-            # Skip info lines
-            if not line.startswith('Episode'):
-                continue
-
-            # Extract metrics using regex
-            episode_match = re.search(r'Episode (\d+)', line)
-            reward_match = re.search(r'Reward: ([-\d.]+)', line)
-            avg_match = re.search(r'Avg\(\d+\): ([-\d.]+)', line)
-            length_match = re.search(r'Length: (\d+)', line)
-            loss_match = re.search(r'Loss: ([-\d.]+)', line)
-
-            if episode_match:
-                episodes.append(int(episode_match.group(1)))
-            if reward_match:
-                rewards.append(float(reward_match.group(1)))
-            if avg_match:
-                avg_rewards.append(float(avg_match.group(1)))
-            if length_match:
-                lengths.append(int(length_match.group(1)))
-            if loss_match:
-                losses.append(float(loss_match.group(1)))
-
-    return {
-        'episodes': episodes,
-        'rewards': rewards,
-        'avg_rewards': avg_rewards,
-        'lengths': lengths,
-        'losses': losses
+    metrics = {
+        'episodes': [],
+        'rewards': [],
+        'avg_rewards': [],
+        'lengths': [],
+        'losses': [],
+        'buffer_sizes': [],
+        'times': [],
+        'eval_episodes': [],
+        'eval_rewards': [],
+        'best_rewards': []
     }
 
+    # Regex patterns for parsing
+    train_pattern = re.compile(
+        r'Ep\s+(\d+)\s+\|\s+'
+        r'R:\s+([-\d.]+)\s+\|\s+'
+        r'R10:\s+([-\d.]+)\s+\|\s+'
+        r'Len:\s+(\d+)\s+\|\s+'
+        r'Loss:\s+([-\d.]+)\s+\|\s+'
+        r'Buf:\s+(\d+)\s+\|\s+'
+        r'T:\s+([\d.]+)m'
+    )
 
-def plot_single_run(data: Dict[str, List], output_path: str, title: str = "Training Progress"):
-    """Create a comprehensive plot for a single training run"""
+    eval_pattern = re.compile(
+        r'EVAL @ Ep\s+(\d+)\s+\|\s+'
+        r'R:\s+([-\d.]+)\s+\|\s+'
+        r'Len:\s+([\d.]+)\s+\|\s+'
+        r'Best:\s+([-\d.]+)'
+    )
+
+    with open(log_path, 'r', encoding='utf-8') as f:
+        for line in f:
+            # Try to match training log
+            train_match = train_pattern.search(line)
+            if train_match:
+                metrics['episodes'].append(int(train_match.group(1)))
+                metrics['rewards'].append(float(train_match.group(2)))
+                metrics['avg_rewards'].append(float(train_match.group(3)))
+                metrics['lengths'].append(int(train_match.group(4)))
+                metrics['losses'].append(float(train_match.group(5)))
+                metrics['buffer_sizes'].append(int(train_match.group(6)))
+                metrics['times'].append(float(train_match.group(7)))
+                continue
+
+            # Try to match evaluation log
+            eval_match = eval_pattern.search(line)
+            if eval_match:
+                metrics['eval_episodes'].append(int(eval_match.group(1)))
+                metrics['eval_rewards'].append(float(eval_match.group(2)))
+                metrics['best_rewards'].append(float(eval_match.group(4)))
+
+    return metrics
+
+
+def smooth(data: list, window: int = 10) -> np.ndarray:
+    """Apply moving average smoothing."""
+    if len(data) < window:
+        return np.array(data)
+    return np.convolve(data, np.ones(window) / window, mode='valid')
+
+
+def plot_training_curves(metrics: dict, output_dir: Path, show: bool = True):
+    """
+    Generate training plots.
+
+    Args:
+        metrics: Dictionary with training metrics
+        output_dir: Directory to save plots
+        show: Whether to display plots
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Set style
+    plt.style.use('seaborn-v0_8-whitegrid')
+    fig_size = (10, 6)
+
+    # 1. Reward plot
+    fig, ax = plt.subplots(figsize=fig_size)
+    episodes = metrics['episodes']
+    rewards = metrics['rewards']
+
+    ax.plot(episodes, rewards, alpha=0.3, label='Episode Reward')
+    if len(rewards) >= 10:
+        smoothed = smooth(rewards, 10)
+        ax.plot(episodes[9:], smoothed, label='Smoothed (10 ep)')
+    ax.plot(episodes, metrics['avg_rewards'], label='Running Avg (10 ep)', linewidth=2)
+
+    ax.set_xlabel('Episode')
+    ax.set_ylabel('Reward')
+    ax.set_title('Training Reward')
+    ax.legend()
+    plt.tight_layout()
+    plt.savefig(output_dir / 'reward.png', dpi=150)
+    if show:
+        plt.show()
+    plt.close()
+
+    # 2. Evaluation reward plot
+    if metrics['eval_episodes']:
+        fig, ax = plt.subplots(figsize=fig_size)
+        ax.plot(metrics['eval_episodes'], metrics['eval_rewards'],
+                marker='o', label='Eval Reward')
+        ax.plot(metrics['eval_episodes'], metrics['best_rewards'],
+                linestyle='--', label='Best Reward')
+        ax.set_xlabel('Episode')
+        ax.set_ylabel('Reward')
+        ax.set_title('Evaluation Reward')
+        ax.legend()
+        plt.tight_layout()
+        plt.savefig(output_dir / 'eval_reward.png', dpi=150)
+        if show:
+            plt.show()
+        plt.close()
+
+    # 3. Loss plot
+    fig, ax = plt.subplots(figsize=fig_size)
+    losses = metrics['losses']
+    ax.plot(episodes, losses, alpha=0.5)
+    if len(losses) >= 10:
+        smoothed_loss = smooth(losses, 10)
+        ax.plot(episodes[9:], smoothed_loss, label='Smoothed', linewidth=2)
+    ax.set_xlabel('Episode')
+    ax.set_ylabel('Loss')
+    ax.set_title('Training Loss')
+    ax.legend()
+    plt.tight_layout()
+    plt.savefig(output_dir / 'loss.png', dpi=150)
+    if show:
+        plt.show()
+    plt.close()
+
+    # 4. Episode length plot
+    fig, ax = plt.subplots(figsize=fig_size)
+    lengths = metrics['lengths']
+    ax.plot(episodes, lengths, alpha=0.5)
+    if len(lengths) >= 10:
+        smoothed_len = smooth(lengths, 10)
+        ax.plot(episodes[9:], smoothed_len, label='Smoothed', linewidth=2)
+    ax.set_xlabel('Episode')
+    ax.set_ylabel('Length')
+    ax.set_title('Episode Length')
+    ax.legend()
+    plt.tight_layout()
+    plt.savefig(output_dir / 'length.png', dpi=150)
+    if show:
+        plt.show()
+    plt.close()
+
+    # 5. Combined summary plot
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-    fig.suptitle(title, fontsize=16, fontweight='bold')
 
-    episodes = data['episodes']
+    # Reward
+    ax = axes[0, 0]
+    ax.plot(episodes, metrics['avg_rewards'], linewidth=2)
+    ax.set_xlabel('Episode')
+    ax.set_ylabel('Avg Reward')
+    ax.set_title('Training Reward')
 
-    # Plot 1: Rewards
-    if data['rewards'] and data['avg_rewards']:
-        axes[0, 0].plot(episodes, data['rewards'], alpha=0.3, label='Episode Reward')
-        axes[0, 0].plot(episodes, data['avg_rewards'], linewidth=2, label='Average Reward (100 eps)')
-        axes[0, 0].set_xlabel('Episode')
-        axes[0, 0].set_ylabel('Reward')
-        axes[0, 0].set_title('Training Rewards')
-        axes[0, 0].legend()
-        axes[0, 0].grid(True, alpha=0.3)
+    # Eval reward
+    ax = axes[0, 1]
+    if metrics['eval_episodes']:
+        ax.plot(metrics['eval_episodes'], metrics['eval_rewards'],
+                marker='o', markersize=4)
+    ax.set_xlabel('Episode')
+    ax.set_ylabel('Eval Reward')
+    ax.set_title('Evaluation Reward')
 
-    # Plot 2: Episode Length
-    if data['lengths']:
-        axes[0, 1].plot(episodes, data['lengths'], color='green', alpha=0.6)
-        # Add smoothed line
-        if len(data['lengths']) > 10:
-            from scipy.ndimage import uniform_filter1d
-            smoothed = uniform_filter1d(data['lengths'], size=min(50, len(data['lengths'])//10))
-            axes[0, 1].plot(episodes, smoothed, color='darkgreen', linewidth=2, label='Smoothed')
-            axes[0, 1].legend()
-        axes[0, 1].set_xlabel('Episode')
-        axes[0, 1].set_ylabel('Steps')
-        axes[0, 1].set_title('Episode Length')
-        axes[0, 1].grid(True, alpha=0.3)
+    # Loss
+    ax = axes[1, 0]
+    if len(losses) >= 10:
+        smoothed_loss = smooth(losses, 10)
+        ax.plot(episodes[9:], smoothed_loss, linewidth=2)
+    else:
+        ax.plot(episodes, losses, linewidth=2)
+    ax.set_xlabel('Episode')
+    ax.set_ylabel('Loss')
+    ax.set_title('Training Loss')
 
-    # Plot 3: Loss
-    if data['losses']:
-        axes[1, 0].plot(episodes, data['losses'], color='red', alpha=0.6)
-        # Add smoothed line
-        if len(data['losses']) > 10:
-            from scipy.ndimage import uniform_filter1d
-            smoothed = uniform_filter1d(data['losses'], size=min(50, len(data['losses'])//10))
-            axes[1, 0].plot(episodes, smoothed, color='darkred', linewidth=2, label='Smoothed')
-            axes[1, 0].legend()
-        axes[1, 0].set_xlabel('Episode')
-        axes[1, 0].set_ylabel('Loss')
-        axes[1, 0].set_title('Training Loss')
-        axes[1, 0].grid(True, alpha=0.3)
-
-    # Plot 4: Learning Curve (cumulative avg reward)
-    if data['rewards']:
-        cumulative_avg = np.cumsum(data['rewards']) / np.arange(1, len(data['rewards']) + 1)
-        axes[1, 1].plot(episodes, cumulative_avg, color='purple', linewidth=2)
-        axes[1, 1].set_xlabel('Episode')
-        axes[1, 1].set_ylabel('Cumulative Average Reward')
-        axes[1, 1].set_title('Learning Curve')
-        axes[1, 1].grid(True, alpha=0.3)
+    # Episode length
+    ax = axes[1, 1]
+    if len(lengths) >= 10:
+        smoothed_len = smooth(lengths, 10)
+        ax.plot(episodes[9:], smoothed_len, linewidth=2)
+    else:
+        ax.plot(episodes, lengths, linewidth=2)
+    ax.set_xlabel('Episode')
+    ax.set_ylabel('Length')
+    ax.set_title('Episode Length')
 
     plt.tight_layout()
-    plt.savefig(output_path, dpi=300, bbox_inches='tight')
-    print(f"Plot saved to: {output_path}")
+    plt.savefig(output_dir / 'summary.png', dpi=150)
+    if show:
+        plt.show()
     plt.close()
 
-
-def plot_comparison(data_list: List[Dict[str, List]], labels: List[str],
-                   output_path: str, title: str = "Algorithm Comparison"):
-    """Create comparison plots for multiple training runs"""
-    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-    fig.suptitle(title, fontsize=16, fontweight='bold')
-
-    colors = sns.color_palette("husl", len(data_list))
-
-    # Plot 1: Average Rewards Comparison
-    for i, (data, label) in enumerate(zip(data_list, labels)):
-        if data['episodes'] and data['avg_rewards']:
-            axes[0].plot(data['episodes'], data['avg_rewards'],
-                        linewidth=2, label=label, color=colors[i])
-
-    axes[0].set_xlabel('Episode')
-    axes[0].set_ylabel('Average Reward (100 episodes)')
-    axes[0].set_title('Reward Comparison')
-    axes[0].legend()
-    axes[0].grid(True, alpha=0.3)
-
-    # Plot 2: Loss Comparison
-    for i, (data, label) in enumerate(zip(data_list, labels)):
-        if data['episodes'] and data['losses']:
-            # Smooth the losses for better visualization
-            from scipy.ndimage import uniform_filter1d
-            if len(data['losses']) > 10:
-                smoothed = uniform_filter1d(data['losses'], size=min(50, len(data['losses'])//10))
-                axes[1].plot(data['episodes'], smoothed,
-                           linewidth=2, label=label, color=colors[i])
-
-    axes[1].set_xlabel('Episode')
-    axes[1].set_ylabel('Training Loss (smoothed)')
-    axes[1].set_title('Loss Comparison')
-    axes[1].legend()
-    axes[1].grid(True, alpha=0.3)
-
-    plt.tight_layout()
-    plt.savefig(output_path, dpi=300, bbox_inches='tight')
-    print(f"Comparison plot saved to: {output_path}")
-    plt.close()
-
-
-def create_summary_table(data_list: List[Dict[str, List]], labels: List[str]):
-    """Print a summary table of final performance"""
-    print(f"\n{'='*70}")
-    print(f"PERFORMANCE SUMMARY")
-    print(f"{'='*70}")
-    print(f"{'Algorithm':<15} {'Final Avg Reward':<20} {'Best Reward':<20} {'Final Loss':<15}")
-    print(f"{'-'*70}")
-
-    for data, label in zip(data_list, labels):
-        final_avg = data['avg_rewards'][-1] if data['avg_rewards'] else 0
-        best_reward = max(data['avg_rewards']) if data['avg_rewards'] else 0
-        final_loss = data['losses'][-1] if data['losses'] else 0
-
-        print(f"{label:<15} {final_avg:<20.2f} {best_reward:<20.2f} {final_loss:<15.4f}")
-
-    print(f"{'='*70}\n")
+    print(f"Plots saved to {output_dir}")
 
 
 def main():
     parser = argparse.ArgumentParser(description='Plot training results')
-    parser.add_argument('--log', type=str, default=None,
-                       help='Path to single log file')
-    parser.add_argument('--logs', type=str, nargs='+', default=None,
-                       help='Paths to multiple log files for comparison')
-    parser.add_argument('--labels', type=str, nargs='+', default=None,
-                       help='Labels for each log file in comparison')
-    parser.add_argument('--output', type=str, required=True,
-                       help='Output path for plot (file or directory)')
-    parser.add_argument('--title', type=str, default=None,
-                       help='Custom title for the plot')
+    parser.add_argument('--log', type=str, required=True,
+                        help='Path to training log file')
+    parser.add_argument('--output', type=str, default=None,
+                        help='Output directory for plots (default: same as log)')
+    parser.add_argument('--no-show', action='store_true',
+                        help='Do not display plots')
     args = parser.parse_args()
 
-    # Ensure output directory exists
-    output_path = Path(args.output)
-    if output_path.suffix == '':
-        # It's a directory
-        output_path.mkdir(parents=True, exist_ok=True)
+    log_path = Path(args.log)
+    if not log_path.exists():
+        print(f"Error: Log file not found: {log_path}")
+        sys.exit(1)
+
+    # Parse log file
+    print(f"Parsing log file: {log_path}")
+    metrics = parse_log_file(str(log_path))
+
+    if not metrics['episodes']:
+        print("Error: No training data found in log file")
+        sys.exit(1)
+
+    print(f"Found {len(metrics['episodes'])} training entries")
+    print(f"Found {len(metrics['eval_episodes'])} evaluation entries")
+
+    # Determine output directory
+    if args.output:
+        output_dir = Path(args.output)
     else:
-        # It's a file
-        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_dir = log_path.parent / 'plots'
 
-    # Single log file
-    if args.log:
-        print(f"Parsing log file: {args.log}")
-        data = parse_log_file(args.log)
-
-        if not data['episodes']:
-            print("Error: No training data found in log file.")
-            return
-
-        print(f"Found {len(data['episodes'])} episodes of training data")
-
-        # Determine output path
-        if output_path.suffix == '':
-            plot_path = output_path / 'training_progress.png'
-        else:
-            plot_path = output_path
-
-        title = args.title or "Training Progress"
-        plot_single_run(data, str(plot_path), title)
-
-    # Multiple log files for comparison
-    elif args.logs:
-        print(f"Comparing {len(args.logs)} training runs...")
-
-        data_list = []
-        for log_path in args.logs:
-            print(f"  Parsing: {log_path}")
-            data = parse_log_file(log_path)
-            data_list.append(data)
-
-        # Use provided labels or default to log filenames
-        if args.labels:
-            if len(args.labels) != len(args.logs):
-                print("Error: Number of labels must match number of log files")
-                return
-            labels = args.labels
-        else:
-            labels = [Path(log).stem for log in args.logs]
-
-        # Determine output path
-        if output_path.suffix == '':
-            plot_path = output_path / 'comparison.png'
-        else:
-            plot_path = output_path
-
-        title = args.title or "Algorithm Comparison"
-        plot_comparison(data_list, labels, str(plot_path), title)
-
-        # Print summary table
-        create_summary_table(data_list, labels)
-
-    else:
-        print("Error: Must provide either --log or --logs")
-        parser.print_help()
+    # Generate plots
+    plot_training_curves(metrics, output_dir, show=not args.no_show)
 
 
 if __name__ == '__main__':

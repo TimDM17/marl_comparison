@@ -1,161 +1,135 @@
 """
-Standalone evaluation script for trained agents.
+Evaluation script for trained MARL models.
 
 Usage:
-    python scripts/evaluate.py --checkpoint results/checkpoints/nqmix_best.pth --config configs/nqmix_humanoid.yaml
-    python scripts/evaluate.py --checkpoint results/checkpoints/nqmix_best.pth --config configs/nqmix_humanoid.yaml --render --n_episodes 5
+    python scripts/evaluate.py --checkpoint results/nqmix_humanoid/best_model --config configs/nqmix_humanoid.yaml
+    python scripts/evaluate.py --checkpoint results/nqmix_humanoid/best_model --config configs/nqmix_humanoid.yaml --episodes 50
 """
 
 import argparse
-import yaml
-import torch
+import sys
 import numpy as np
-import random
 from pathlib import Path
 
-from src import MaMuJoCoWrapper
-from src import Evaluator
-from src import Logger
+# Add project root to path
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+
+from src.agents import NQMIX
+from src.envs import MaMuJoCoWrapper
+from src.training import Evaluator
+from src.utils import load_config, Logger
+
+
+def create_agent(config: dict, env: MaMuJoCoWrapper):
+    """Create agent based on config."""
+    algorithm = config.get('algorithm', 'nqmix').lower()
+    agent_params = config.get('agent_params', {})
+
+    if algorithm == 'nqmix':
+        agent = NQMIX(
+            n_agents=env.n_agents,
+            obs_dims=env.obs_dims,
+            action_dims=env.action_dims,
+            state_dim=env.state_dim,
+            hidden_dim=agent_params.get('hidden_dim', 64),
+            lr_actor=agent_params.get('lr_actor', 5e-4),
+            lr_critic=agent_params.get('lr_critic', 5e-4),
+            gamma=agent_params.get('gamma', 0.99),
+            tau=agent_params.get('tau', 0.001),
+            buffer_capacity=agent_params.get('buffer_capacity', 5000)
+        )
+    elif algorithm == 'facmac':
+        raise NotImplementedError("FACMAC not yet implemented")
+    else:
+        raise ValueError(f"Unknown algorithm: {algorithm}")
+
+    return agent
 
 
 def main():
-    # Parse arguments
-    parser = argparse.ArgumentParser(description='Evaluate trained MARL agent')
+    parser = argparse.ArgumentParser(description='Evaluate trained MARL models')
     parser.add_argument('--checkpoint', type=str, required=True,
-                       help='Path to checkpoint file (.pth)')
+                        help='Path to model checkpoint')
     parser.add_argument('--config', type=str, required=True,
-                       help='Path to config file')
-    parser.add_argument('--n_episodes', type=int, default=10,
-                       help='Number of evaluation episodes')
-    parser.add_argument('--seed', type=int, default=999,
-                       help='Random seed for evaluation')
+                        help='Path to config file')
+    parser.add_argument('--episodes', type=int, default=100,
+                        help='Number of evaluation episodes')
     parser.add_argument('--render', action='store_true',
-                       help='Render environment (if supported)')
-    parser.add_argument('--save_results', type=str, default=None,
-                       help='Path to save evaluation results (optional)')
+                        help='Render environment (if supported)')
     args = parser.parse_args()
 
     # Load config
-    with open(args.config, 'r') as f:
-        config = yaml.safe_load(f)
+    config = load_config(args.config)
 
-    # Set seeds
-    set_seeds(args.seed)
+    # Initialize logger
+    logger = Logger(verbose=True)
 
-    # Initialize environment
-    env = MaMuJoCoWrapper(config['env_name'], config['partitioning'])
+    logger.info(f"Evaluating checkpoint: {args.checkpoint}")
+    logger.info(f"Config: {args.config}")
 
-    # Create agent
+    # Create environment
+    env_name = config.get('env_name', 'Humanoid')
+    partitioning = config.get('partitioning', '9|8')
+    env = MaMuJoCoWrapper(env_name=env_name, partitioning=partitioning)
+
+    logger.info(f"Environment: {env_name} ({partitioning})")
+
+    # Create and load agent
     agent = create_agent(config, env)
-
-    # Load checkpoint
-    checkpoint_path = Path(args.checkpoint)
-    if not checkpoint_path.exists():
-        raise FileNotFoundError(f"Checkpoint not found: {args.checkpoint}")
-
-    print(f"\n{'='*70}")
-    print(f"Loading checkpoint: {args.checkpoint}")
-    agent.load(str(checkpoint_path))
-    print(f"Checkpoint loaded successfully!")
-    print(f"{'='*70}\n")
+    agent.load(args.checkpoint)
+    logger.info(f"Model loaded from {args.checkpoint}")
 
     # Create evaluator
-    evaluator = Evaluator(agent, env, config)
+    evaluator = Evaluator(
+        agent=agent,
+        env=env,
+        logger=logger,
+        n_eval_episodes=args.episodes,
+        save_best=False
+    )
 
     # Run evaluation
-    print(f"Evaluating for {args.n_episodes} episodes...")
-    print(f"Environment: {config['env_name']}")
-    print(f"Algorithm: {config['algorithm']}")
-    print(f"Seed: {args.seed}\n")
+    logger.info(f"\nRunning {args.episodes} evaluation episodes...\n")
 
-    if args.render:
-        # Evaluate with rendering (slower)
-        avg_reward, avg_length = evaluate_with_render(
-            agent, env, config, args.n_episodes, args.seed
-        )
-    else:
-        # Fast evaluation without rendering
-        avg_reward, avg_length = evaluator.evaluate(
-            n_episodes=args.n_episodes,
-            seed=args.seed
-        )
+    episode_rewards = []
+    episode_lengths = []
+
+    for i in range(args.episodes):
+        reward, length = evaluator._run_episode()
+        episode_rewards.append(reward)
+        episode_lengths.append(length)
+
+        if (i + 1) % 10 == 0:
+            logger.info(f"Completed {i + 1}/{args.episodes} episodes")
+
+    # Compute statistics
+    mean_reward = np.mean(episode_rewards)
+    std_reward = np.std(episode_rewards)
+    min_reward = np.min(episode_rewards)
+    max_reward = np.max(episode_rewards)
+    mean_length = np.mean(episode_lengths)
 
     # Print results
-    print(f"\n{'='*70}")
-    print(f"EVALUATION RESULTS")
-    print(f"{'='*70}")
-    print(f"Number of episodes: {args.n_episodes}")
-    print(f"Average reward: {avg_reward:.2f}")
-    print(f"Average episode length: {avg_length:.1f}")
-    print(f"{'='*70}\n")
+    logger.info(f"\n{'='*50}")
+    logger.info("EVALUATION RESULTS")
+    logger.info(f"{'='*50}")
+    logger.info(f"Episodes:     {args.episodes}")
+    logger.info(f"Mean Reward:  {mean_reward:.2f} +/- {std_reward:.2f}")
+    logger.info(f"Min Reward:   {min_reward:.2f}")
+    logger.info(f"Max Reward:   {max_reward:.2f}")
+    logger.info(f"Mean Length:  {mean_length:.1f}")
+    logger.info(f"{'='*50}\n")
 
-    # Save results if requested
-    if args.save_results:
-        save_path = Path(args.save_results)
-        save_path.parent.mkdir(parents=True, exist_ok=True)
+    env.close()
 
-        results = {
-            'checkpoint': str(checkpoint_path),
-            'config': args.config,
-            'algorithm': config['algorithm'],
-            'environment': config['env_name'],
-            'n_episodes': args.n_episodes,
-            'seed': args.seed,
-            'avg_reward': float(avg_reward),
-            'avg_length': float(avg_length)
-        }
-
-        with open(save_path, 'w') as f:
-            yaml.dump(results, f)
-
-        print(f"Results saved to: {save_path}\n")
-
-
-def evaluate_with_render(agent, env, config, n_episodes, seed):
-    """
-    Evaluate with rendering enabled (if environment supports it)
-    Note: MaMuJoCo rendering may require additional setup
-    """
-    print("Note: Rendering may not be available for MaMuJoCo environments")
-    print("Falling back to evaluation without rendering...\n")
-
-    # Use standard evaluator (rendering support can be added later)
-    evaluator = Evaluator(agent, env, config)
-    return evaluator.evaluate(n_episodes=n_episodes, seed=seed)
-
-
-def create_agent(config, env):
-    """Factory function to create agent based on config"""
-    if config['algorithm'] == 'nqmix':
-        from src import NQMIX
-        return NQMIX(
-            n_agents=env.n_agents,
-            obs_dims=env.obs_dims,
-            action_dims=env.action_dims,
-            state_dim=env.state_dim,
-            **config['agent_params']
-        )
-    elif config['algorithm'] == 'facmac':
-        from src import FACMAC
-        return FACMAC(
-            n_agents=env.n_agents,
-            obs_dims=env.obs_dims,
-            action_dims=env.action_dims,
-            state_dim=env.state_dim,
-            **config['agent_params']
-        )
-    else:
-        raise ValueError(f"Unknown algorithm: {config['algorithm']}")
-
-
-def set_seeds(seed):
-    """Set all random seeds"""
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    random.seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed(seed)
-        torch.cuda.manual_seed_all(seed)
+    return {
+        'mean_reward': mean_reward,
+        'std_reward': std_reward,
+        'min_reward': min_reward,
+        'max_reward': max_reward,
+        'mean_length': mean_length
+    }
 
 
 if __name__ == '__main__':

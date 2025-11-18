@@ -379,11 +379,23 @@ class NQMIX(BaseAgent):
 
         # Process each episode in the batch
         for episode in episodes:
-            # Initiliaze hidden states for this episode
+            # Validate episode data structure
+            T = len(episode['rewards'])
+            for i in range(self.n_agents):
+                if len(episode['observations'][i]) != T:
+                    raise ValueError(f"Agent {i} observations length {len(episode['observations'][i])} != rewards length {T}")
+                if len(episode['actions'][i]) != T:
+                    raise ValueError(f"Agent {i} actions length {len(episode['actions'][i])} != rewards length {T}")
+                if len(episode['last_actions'][i]) != T:
+                    raise ValueError(f"Agent {i} last_actions length {len(episode['last_actions'][i])} != rewards length {T}")
+            if len(episode['states']) != T:
+                raise ValueError(f"States length {len(episode['states'])} != rewards length {T}")
+
+            # Initialize hidden states for this episode
             # Each episode starts with empty history (zero hidden states)
-            hiddens_eval = [agent.init_hidden(1).to(self.device) 
+            hiddens_eval = [agent.init_hidden(1).to(self.device)
                            for agent in self.agent_eval]
-            hiddens_target = [agent.init_hidden(1).to(self.device) 
+            hiddens_target = [agent.init_hidden(1).to(self.device)
                              for agent in self.agent_target]
 
             episode_critic_loss = 0.0
@@ -406,7 +418,8 @@ class NQMIX(BaseAgent):
                 last_actions_t = [torch.FloatTensor(episode['last_actions'][i][t]).unsqueeze(0).to(self.device)
                                  for i in range(self.n_agents)]
                 state_t = torch.FloatTensor(episode['states'][t]).unsqueeze(0).to(self.device)
-                reward = torch.FloatTensor([episode['rewards'][t]]).unsqueeze(0).to(self.device)
+                # Reward tensor shape [1, 1] to match mixer output shape
+                reward = torch.FloatTensor([[episode['rewards'][t]]]).to(self.device)
 
                 # ========================================================
                 # CRITIC UPDATE (Algorithm 2, Lines 7-12)
@@ -547,11 +560,16 @@ class NQMIX(BaseAgent):
                         retain_graph=True,  # Keep graph for other agents
                         create_graph=False  # Don't need second-order gradients
                     )[0]
-                    
-                    # KEY INNOVATION: Extract sign of gradient
-                    # sign > 0: Agent helps team → gradient ASCENT (maximize Q_a)
-                    # sign < 0: Agent hurts team → gradient DESCENT (minimize Q_a)
-                    sign_grad = torch.sign(grad_q_tot_wrt_qa).detach()
+
+                    # Check for NaN/Inf gradients
+                    if torch.isnan(grad_q_tot_wrt_qa).any() or torch.isinf(grad_q_tot_wrt_qa).any():
+                        # Skip this agent's update if gradient is invalid
+                        sign_grad = torch.zeros_like(grad_q_tot_wrt_qa)
+                    else:
+                        # KEY INNOVATION: Extract sign of gradient
+                        # sign > 0: Agent helps team → gradient ASCENT (maximize Q_a)
+                        # sign < 0: Agent hurts team → gradient DESCENT (minimize Q_a)
+                        sign_grad = torch.sign(grad_q_tot_wrt_qa).detach()
                     
                     # Actor loss with sign weighting and temporal discount I
                     # Negative sign for gradient ascent when sign_grad > 0

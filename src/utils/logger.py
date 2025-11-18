@@ -34,7 +34,7 @@ class Logger:
         if log_file:
             Path(log_file).parent.mkdir(parents=True, exist_ok=True)
             # Clear existing log
-            with open(log_file, 'w') as f:
+            with open(log_file, 'w', encoding='utf-8') as f:
                 f.write("")
     
     def info(self, message: str):
@@ -42,7 +42,7 @@ class Logger:
         if self.verbose:
             print(message)
         if self.log_file:
-            with open(self.log_file, 'a') as f:
+            with open(self.log_file, 'a', encoding='utf-8') as f:
                 f.write(message + '\n')
     
     def log_train(self, metrics: Dict):

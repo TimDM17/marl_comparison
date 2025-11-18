@@ -4,7 +4,7 @@ Clean logging system for MARL training.
 Design: Minimal, one-line logs, essential metrics only.
 """
 
-import sys
+
 from typing import Dict
 from pathlib import Path
 

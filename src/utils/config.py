@@ -18,7 +18,6 @@ def load_config(config_path: str) -> Dict:
         Dictionary with configuration
     """
     config_path = Path(config_path)
-
     if not config_path.exists():
         raise FileNotFoundError(f"Config file not found: {config_path}")
     

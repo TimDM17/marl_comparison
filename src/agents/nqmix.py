@@ -6,7 +6,9 @@ from typing import List, Tuple, Dict
 from src.networks import AgentNetwork, MixingNetwork
 from src.memory import ReplayBuffer
 
-class NQMIX:
+from src.agents.base_agent import BaseAgent
+
+class NQMIX(BaseAgent):
     """
     NQMIX agent for continuous action space (Algorithm 2).
 

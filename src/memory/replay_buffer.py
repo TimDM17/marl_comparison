@@ -10,11 +10,6 @@ class ReplayBuffer:
     - Stores FULL EPISODES (not individual transitions like DQN)
     - Enables off-policy learning by reusing old experience
     - Uses deque with maxlen for automatic old data removal
-
-    Why episodes instead of transitions?
-    - NQMIX uses GRU which needs sequential data (τ = history)
-    - Each episode contains: observations, actions, rewards, states across time
-    - Sampling an episode = sampling a trajectory with temporal structure
     """
     def __init__(self, capacity: int = 1000):
         """

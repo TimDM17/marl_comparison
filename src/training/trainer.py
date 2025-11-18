@@ -118,7 +118,11 @@ class Trainer:
 
             if done:
                 break
-        
+
+        # Store termination flags
+        episode_data['terminated'] = any(terminated.values()) if isinstance(terminated, dict) else terminated
+        episode_data['truncated'] = any(truncated.values()) if isinstance(truncated, dict) else truncated
+
         return episode_data, episode_reward, episode_length
     
     
@@ -142,7 +146,7 @@ class Trainer:
         if eval_reward > self.best_eval_reward:
             self.best_eval_reward = eval_reward
             self.agent.save(f"{self.save_dir}/best.pth")
-            self.logger.info("✓ New best model saved")
+            self.logger.info("[OK] New best model saved")
     
     
     def _log_progress(self, episode: int, loss: Optional[float], elapsed: float):
@@ -193,7 +197,9 @@ class Trainer:
             'actions': [[] for _ in range(self.env.n_agents)],
             'last_actions': [[] for _ in range(self.env.n_agents)],
             'states': [],
-            'rewards': []
+            'rewards': [],
+            'terminated': False,
+            'truncated': False
         }
     
     def _is_done(self, terminated, truncated):

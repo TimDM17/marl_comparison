@@ -44,11 +44,9 @@ class Evaluator:
             actions, hiddens = self.agent.select_actions(
                 observations, last_actions, hiddens, explore=False
             )
-            
-            # Step
-            action_dict = {self.env.possible_agents[i]: actions[i] 
-                          for i in range(self.env.n_agents)}
-            next_obs, rewards, terminated, truncated, _ = self.env.step(action_dict)
+
+            # Step (wrapper handles list-to-dict conversion)
+            next_obs, rewards, terminated, truncated, _ = self.env.step(actions)
             
             episode_reward += sum(rewards.values())
             episode_length += 1

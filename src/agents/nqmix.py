@@ -185,9 +185,9 @@ class NQMIX(BaseAgent):
                            list(self.agent_eval[i].gru.parameters()) + \
                            list(self.agent_eval[i].actor_fc.parameters()) + \
                            list(self.agent_eval[i].actor_out.parameters()) 
-        self.actor_optimizers.append(
-            torch.optim.RMSprop(actor_params, lr=lr_actor)
-        )
+            self.actor_optimizers.append(
+                torch.optim.RMSprop(actor_params, lr=lr_actor)
+            )
             
 
         # Example for 2 agents:

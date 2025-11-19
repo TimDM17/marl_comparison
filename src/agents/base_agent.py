@@ -78,7 +78,7 @@ class BaseAgent(ABC):
         """
         pass
     
-    def store_episode(self, episode_data: Dict):
+    def store_episode(self, episode_data: Dict) -> None:
         """
         Store episode in replay buffer.
         
@@ -98,7 +98,7 @@ class BaseAgent(ABC):
         self.replay_buffer.push(episode_data)
     
     @abstractmethod
-    def save(self, path: str):
+    def save(self, path: str) -> None:
         """
         Save model checkpoint.
         
@@ -108,7 +108,7 @@ class BaseAgent(ABC):
         pass
     
     @abstractmethod
-    def load(self, path: str):
+    def load(self, path: str) -> None:
         """
         Load model checkpoint.
         

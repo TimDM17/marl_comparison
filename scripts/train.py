@@ -88,7 +88,8 @@ def main():
 
     # Initialize logger
     log_file = save_dir / 'training.log'
-    logger = Logger(log_file=str(log_file), verbose=True)
+    tensorboard_dir = save_dir / 'tensorboard'
+    logger = Logger(log_file=str(log_file), verbose=True, tensorboard_dir=str(tensorboard_dir))
 
     logger.info(f"Config: {args.config}")
     logger.info(f"Seed: {seed}")
@@ -163,6 +164,7 @@ def main():
         'total_episodes': results.get('total_episodes', 0)
     }
     logger.log_summary(summary)
+    logger.closeTensorBoard()
 
     # Save final model
     agent.save(str(save_dir / 'final_model'))

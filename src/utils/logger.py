@@ -5,9 +5,9 @@ Design: Minimal, one-line logs, essential metrics only.
 """
 
 
-from typing import Dict
+from typing import Dict, Optional
 from pathlib import Path
-
+from torch.utils.tensorboard import SummaryWriter
 
 class Logger:
     """
@@ -20,7 +20,7 @@ class Logger:
     - Optional file logging
     """
     
-    def __init__(self, log_file: str = None, verbose: bool = True):
+    def __init__(self, log_file: Optional[str] = None, verbose: bool = True, tensorboard_dir: Optional[str] = None):
         """
         Initialize logger.
         
@@ -36,8 +36,12 @@ class Logger:
             # Clear existing log
             with open(log_file, 'w', encoding='utf-8') as f:
                 f.write("")
+        
+        self.writer = None
+        if tensorboard_dir:
+            self.writer = SummaryWriter(log_dir=tensorboard_dir)
     
-    def info(self, message: str):
+    def info(self, message: str) -> None:
         """Print info message"""
         if self.verbose:
             print(message)
@@ -45,7 +49,7 @@ class Logger:
             with open(self.log_file, 'a', encoding='utf-8') as f:
                 f.write(message + '\n')
     
-    def log_train(self, metrics: Dict):
+    def log_train(self, metrics: Dict) -> None:
         """
         Log training progress (one line).
         
@@ -62,9 +66,16 @@ class Logger:
             f"T: {metrics['time_min']:6.1f}m"
         )
         self.info(log_str)
+
+        if self.writer:
+            self.writer.add_scalar('train/episode_reward', metrics['reward'], metrics['episode'])
+            self.writer.add_scalar('train/avg_reward_10', metrics['avg_reward_10'], metrics['episode'])
+            self.writer.add_scalar('train/episode_length', metrics['length'], metrics['episode'])
+            self.writer.add_scalar('train/loss', metrics['loss'], metrics['episode'])
+            self.writer.add_scalar('train/buffer_size', metrics['buffer_size'], metrics['episode'])
     
     def log_eval(self, episode: int, eval_reward: float, 
-                 eval_length: float, best_reward: float):
+                 eval_length: float, best_reward: float) -> None:
         """
         Log evaluation results.
         
@@ -80,8 +91,13 @@ class Logger:
                  f"Len: {eval_length:6.1f} | "
                  f"Best: {best_reward:7.1f}")
         self.info(f"{'='*70}\n")
+
+        if self.writer:
+            self.writer.add_scalar('eval/mean_reward', eval_reward, episode)
+            self.writer.add_scalar('eval/mean_length', eval_length, episode)
+            self.writer.add_scalar('eval/best_reward', best_reward, episode)
     
-    def log_summary(self, summary: Dict):
+    def log_summary(self, summary: Dict) -> None:
         """
         Log final training summary.
         
@@ -98,3 +114,7 @@ class Logger:
         self.info(f"{'='*70}\n")
 
 
+    def closeTensorBoard(self) -> None:
+
+        if self.writer:
+            self.writer.close()

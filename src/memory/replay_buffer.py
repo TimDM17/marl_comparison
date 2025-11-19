@@ -1,6 +1,7 @@
 from collections import deque
 from typing import Dict
 import random
+from typing import Dict, List
 
 class ReplayBuffer:
     """
@@ -27,7 +28,7 @@ class ReplayBuffer:
         # More efficient than list for this use case (O(1) append/pop)
         self.buffer = deque(maxlen=capacity)
 
-    def push(self, episode: Dict):
+    def push(self, episode: Dict) -> None:
         """
         Store a complete episode in the buffer
 
@@ -54,7 +55,7 @@ class ReplayBuffer:
         # If buffer is full (len == capacity), oldest episode auto-removed
         self.buffer.append(episode)
 
-    def sample(self, batch_size: int):
+    def sample(self, batch_size: int) -> List[Dict]:
         """
         Randomly sample a batch of episodes for training
 
@@ -78,7 +79,7 @@ class ReplayBuffer:
         # min() ensures we don't try to sample more than available
         return random.sample(self.buffer, min(batch_size, len(self.buffer)))
 
-    def __len__(self):
+    def __len__(self) -> int:
         """
         Get current number of episodes in buffer
 

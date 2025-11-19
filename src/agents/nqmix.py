@@ -14,7 +14,7 @@ Key innovations:
 import torch
 import torch.nn as nn
 import numpy as np
-from typing import List, Tuple
+from typing import List, Tuple, Dict, Optional
 
 from src.networks import AgentNetwork, MixingNetwork
 from src.memory import ReplayBuffer
@@ -216,7 +216,7 @@ class NQMIX(BaseAgent):
         """Access to replay buffer (required by BaseAgent)."""
         return self._replay_buffer
     
-    def _hard_update(self, target_nets, eval_nets):
+    def _hard_update(self, target_nets: nn.ModuleList, eval_nets: nn.ModuleList) -> None:
         """
         Hard update: Copy weights exactly from eval to target networks.
 
@@ -234,7 +234,7 @@ class NQMIX(BaseAgent):
         # After this, target and eval have identical weights
         # Example: agent_target[0] becomes exact copy of agent_eval[0]
 
-    def _soft_update(self):
+    def _soft_update(self) -> None:
         """
         Soft update: Slowly move target networks toward eval networks.
         
@@ -351,7 +351,7 @@ class NQMIX(BaseAgent):
         return actions, new_hiddens
     
 
-    def init_hidden_states(self):
+    def init_hidden_states(self) -> List[torch.Tensor]:
         """
         Initialize GRU hidden states for all agents at episode start.
         
@@ -366,7 +366,7 @@ class NQMIX(BaseAgent):
         return [agent.init_hidden().to(self.device) for agent in self.agent_eval]
     
     
-    def train_step(self, batch_size: int = 32):
+    def train_step(self, batch_size: int = 32) -> Optional[Dict[str, float]]:
         """
         Training step implementing Algorithm 2 from NQMIX paper.
 
@@ -623,7 +623,7 @@ class NQMIX(BaseAgent):
         return avg_critic_loss
     
     
-    def save(self, path: str):
+    def save(self, path: str) -> None:
         """
         Save model checkpoint to disk.
 
@@ -647,7 +647,7 @@ class NQMIX(BaseAgent):
         }, path)
 
     
-    def load(self, path: str):
+    def load(self, path: str) -> None:
         """
         Load model checkpoint from disk.
 

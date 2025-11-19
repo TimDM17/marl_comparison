@@ -5,7 +5,7 @@ Provides consistent API for different MaMuJoCo environments
 """
 
 import numpy as np
-from typing import Tuple, List, Dict
+from typing import Tuple, List, Dict, Optional
 
 
 class MaMuJoCoWrapper:
@@ -53,7 +53,7 @@ class MaMuJoCoWrapper:
         self.state_dim = sum(self.obs_dims)
 
     
-    def reset(self, seed: int = None) -> Tuple[Dict, Dict]:
+    def reset(self, seed: Optional[int] = None) -> Tuple[Dict, Dict]:
         """
         Reset environment.
         
@@ -89,11 +89,11 @@ class MaMuJoCoWrapper:
         return self.env.step(action_dict)
     
 
-    def close(self):
+    def close(self) -> None:
         """Close environment"""
         self.env.close()
 
-    def render(self):
+    def render(self) -> Optional[np.ndarray]:
         """Render environment (returns frame if render_mode='rgb_array')."""
         return self.env.render()
 

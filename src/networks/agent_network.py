@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
+from typing import Tuple, Optional
 
 
 class AgentNetwork(nn.Module):
@@ -90,8 +90,8 @@ class AgentNetwork(nn.Module):
             obs: torch.Tensor,
             last_action: torch.Tensor,
             hidden: torch.Tensor,
-            current_action: torch.Tensor= None
-        ):
+            current_action: Optional[torch.Tensor] = None
+        ) -> Tuple[Optional[torch.Tensor], torch.Tensor, torch.Tensor]:
         """
         Forward pass through the agent network.
 
@@ -156,7 +156,7 @@ class AgentNetwork(nn.Module):
 
         return q_value, action, new_hidden
     
-    def init_hidden(self, batch_size: int= 1):
+    def init_hidden(self, batch_size: int= 1) -> torch.Tensor:
         """
         Initialize GRU hidden state (represents empty history at episode start).
 

@@ -61,7 +61,7 @@ class MixingNetwork(nn.Module):
         # Can be non-monotonic: ∂Q_tot/∂Q_i can be negative!
         self.fc2 = nn.Linear(hidden_dim, 1)
 
-    def forward(self, q_values: List[torch.Tensor], state: torch.Tensor):
+    def forward(self, q_values: List[torch.Tensor], state: torch.Tensor) -> torch.Tensor:
         """
         Mix individual Q-values into joint Q_tot
 

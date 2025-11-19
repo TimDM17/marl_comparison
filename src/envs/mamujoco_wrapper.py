@@ -104,4 +104,3 @@ class MaMuJoCoWrapper:
         return self.env.render()
 
 
-print("[OK] MaMuJoCoWrapper defined")

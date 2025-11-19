@@ -52,13 +52,7 @@ class MaMuJoCoWrapper:
         ]
         self.state_dim = sum(self.obs_dims)
 
-        print(f"[OK] MaMuJoCo {env_name} ({partitioning}) initialized")
-        print(f"  Agents: {self.n_agents}")
-        print(f"  Obs dims: {self.obs_dims}")
-        print(f"  Action dims: {self.action_dims}")
-        print(f"  State dim: {self.state_dim}")
     
-
     def reset(self, seed: int = None) -> Tuple[Dict, Dict]:
         """
         Reset environment.

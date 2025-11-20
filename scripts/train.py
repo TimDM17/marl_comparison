@@ -168,7 +168,7 @@ def main():
         logger=logger,
         n_eval_episodes=config.get('n_eval_episodes', 10),
         save_best=True,
-        save_path=str(save_dir / 'best_model')
+        save_path=str(save_dir / 'best_model.pth')
     )
 
     # ================================================================
@@ -233,7 +233,7 @@ def main():
     logger.closeTensorBoard()
 
     # Save final model (might be different from best model)
-    agent.save(str(save_dir / 'final_model'))
+    agent.save(str(save_dir / 'final_model.pth'))
     logger.info(f"Models saved to {save_dir}")
 
     return results

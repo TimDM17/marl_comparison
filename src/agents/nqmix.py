@@ -159,22 +159,12 @@ class NQMIX(BaseAgent):
         # - Gradient Flows: Q_tot -> mixer -> individual Q_values -> agent critics
         # - Joint optmization ensures consistency
         
-        # Build list of critic parameters from each agent network
-        critic_params = []
-        for i in range(n_agents):
-            critic_params.extend(self.agent_eval[i].fc1.parameters()) # shared encoder
-            critic_params.extend(self.agent_eval[i].gru.parameters()) # shared GRU
-            critic_params.extend(self.agent_eval[i].critic_fc.parameters()) # critic head
-            critic_params.extend(self.agent_eval[i].critic_out.parameters()) # critic output
-
         self.critic_optimizer = torch.optim.RMSprop(
-            # Combine all critic-related parameters
-            critic_params +   # All agent network critic params
-            list(self.mixer_eval.parameters()),    # Mixer params
+            list(self.agent_eval.parameters()) + list(self.mixer_eval.parameters()),
             lr=lr_critic
         )
 
-        
+
         # ======================================================================
         # ACTOR OPTIMIZERS (separate optimizer per agent's actor)
         # ======================================================================
@@ -187,14 +177,13 @@ class NQMIX(BaseAgent):
         # - Agent i's actor only updates its own policy parameters
 
         # Only optimize actor-specific layers (not entire network)
-        self.actor_optimizers = []
-        for i in range(n_agents):
-            # Only optimize actor-specific layers, NOT shared encoder/GRU
-            actor_params = list(self.agent_eval[i].actor_fc.parameters()) + \
-                           list(self.agent_eval[i].actor_out.parameters()) 
-            self.actor_optimizers.append(
-                torch.optim.RMSprop(actor_params, lr=lr_actor)
+        self.actor_optimizers = [
+            torch.optim.RMSprop(
+                list(agent.actor_fc.parameters()) + list(agent.actor_out.parameters()),
+                lr=lr_actor
             )
+            for agent in self.agent_eval
+        ]
             
 
         # Example for 2 agents:

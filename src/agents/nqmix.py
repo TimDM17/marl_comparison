@@ -189,9 +189,8 @@ class NQMIX(BaseAgent):
         # Only optimize actor-specific layers (not entire network)
         self.actor_optimizers = []
         for i in range(n_agents):
-            actor_params = list(self.agent_eval[i].fc1.parameters()) + \
-                           list(self.agent_eval[i].gru.parameters()) + \
-                           list(self.agent_eval[i].actor_fc.parameters()) + \
+            # Only optimize actor-specific layers, NOT shared encoder/GRU
+            actor_params = list(self.agent_eval[i].actor_fc.parameters()) + \
                            list(self.agent_eval[i].actor_out.parameters()) 
             self.actor_optimizers.append(
                 torch.optim.RMSprop(actor_params, lr=lr_actor)

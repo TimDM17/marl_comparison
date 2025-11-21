@@ -22,20 +22,21 @@ from typing import Tuple, List, Dict, Optional
 
 class MaMuJoCoWrapper:
     
-    def __init__(self, env_name: str = "Humanoid", partitioning: str = "9|8"):
+    def __init__(self, env_name: str = "Humanoid", partitioning: str = "9|8", render_mode: Optional[str] = None):
         """
         Initialize MaMuJoCo environment.
 
         Args:
             env_name: Environment name (e.g., "Humanoid", "Ant")
             partitioning: Action partitioning (e.g., "9|8" for Humanoid)
+            render_mode: Rendering mode ('rgb_array' for video, None for no rendering)
         """
         # Import here to allow framework to work even without gymnasium_robotics
         from gymnasium_robotics import mamujoco_v1
 
         # Create parallel environment (all agents act simultaneously)
         # Unlike turn-based environments, all agents observe and act at the same time
-        self.env = mamujoco_v1.parallel_env(env_name, partitioning)
+        self.env = mamujoco_v1.parallel_env(env_name, partitioning, render_mode=render_mode)
         self.env_name = env_name
         self.partitioning = partitioning
 

@@ -163,6 +163,22 @@ def main():
     logger.info(f"Seed: {seed}")
     logger.info(f"Save dir: {save_dir}")
     logger.info("")
+
+    # Display PyTorch and device information
+    logger.info("="*70)
+    logger.info("SYSTEM INFORMATION")
+    logger.info("="*70)
+    logger.info(f"PyTorch version:   {torch.__version__}")
+    logger.info(f"CUDA available:    {torch.cuda.is_available()}")
+    if torch.cuda.is_available():
+        logger.info(f"CUDA version:      {torch.version.cuda}")
+        logger.info(f"GPU device:        {torch.cuda.get_device_name(0)}")
+        logger.info(f"GPU memory:        {torch.cuda.get_device_properties(0).total_memory / (1024**3):.1f} GB")
+    else:
+        logger.info("WARNING: CUDA not available! Training will run on CPU (much slower)")
+    logger.info("="*70)
+    logger.info("")
+
     logger.info("="*70)
     logger.info("HYPERPARAMETERS")
     logger.info("="*70)
@@ -210,6 +226,8 @@ def main():
     # ================================================================
     agent = create_agent(config, env)
     logger.info(f"Algorithm: {config.get('algorithm', 'nqmix').upper()}")
+    logger.info(f"Device: {agent.device}")
+    logger.info("")
 
     # ================================================================
     # CREATE EVALUATOR

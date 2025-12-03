@@ -1,65 +1,58 @@
 # ================================================================
-# NQMIX Configuration for MaMuJoCo Humanoid
+# NQMIX Configuration for MaMuJoCo Humanoid 
 # ================================================================
-# This config defines all hyperparameters for training NQMIX on
-# the Humanoid robot with 2 agents (9|8 action split)
-
-# Algorithm selection
 algorithm: nqmix
 
 # ================================================================
 # ENVIRONMENT SETTINGS
 # ================================================================
-env_name: Humanoid      # MuJoCo environment (Humanoid, Ant, HalfCheetah, etc.)
-partitioning: "9|8"     # Action split: agent_0 gets 9 dims, agent_1 gets 8 dims
+env_name: Humanoid
+partitioning: "9|8"
 
 # ================================================================
 # TRAINING SETTINGS
 # ================================================================
-n_episodes: 3000        # Total training episodes
-max_steps: 1000         # Max timesteps per episode (Humanoid episodes are ~1000 steps)
-batch_size: 16          # Episodes sampled per training update
-seed: 42                # Random seed for reproducibility
+n_episodes: 100000      
+max_steps: 1000
+batch_size: 64          
+train_every: 65         
+train_steps: 1          
+seed: 42
 
 # ================================================================
 # EVALUATION SETTINGS
 # ================================================================
-eval_freq: 100          # Evaluate every N episodes
-n_eval_episodes: 10     # Episodes per evaluation (averaged for stability)
-log_freq: 10            # Log training metrics every N episodes
+eval_freq: 100
+n_eval_episodes: 10
+log_freq: 10
 
 # ================================================================
 # EXPLORATION NOISE SETTINGS
 # ================================================================
-# Gaussian noise added to actions for exploration
-# Decays exponentially from start to end over decay_episodes
-noise_scale_start: 0.12   # Initial noise std (high exploration)
-noise_scale_end: 0.02     # Final noise std (low exploration, more exploitation)
-noise_decay_episodes: 1500 # Episodes to decay from start to end
+noise_scale_start: 0.12
+noise_scale_end: 0.02
+noise_decay_episodes: 3000  
 
 # ================================================================
 # AGENT HYPERPARAMETERS
 # ================================================================
 agent_params:
-  # Network architecture
-  hidden_dim: 128         # GRU hidden state size (paper uses 64, we use 128)
 
-  # Learning rates (paper recommends 5e-4 for both)
-  lr_actor: 0.0003        # Actor network learning rate
-  lr_critic: 0.0003       # Critic network learning rate
+  hidden_dim: 128       
 
-  # RL hyperparameters
-  gamma: 0.99             # Discount factor for future rewards (0.99 = long-term focus)
-  tau: 0.005              # Soft target update rate (0.005 = slow, stable updates)
+  # Learning rates 
+  lr_actor: 0.0005
+  lr_critic: 0.0005
 
-  # Replay buffer
-  buffer_capacity: 5000   # Max episodes stored (older episodes discarded)
+  gamma: 0.99
+  tau: 0.005            
 
-  # Action bounds (must match environment)
-  action_low: -0.4        # Minimum action value for Humanoid
-  action_high: 0.4        # Maximum action value for Humanoid
+  buffer_capacity: 50000  
+
+  action_low: -0.4
+  action_high: 0.4
 
 # ================================================================
 # OUTPUT SETTINGS
 # ================================================================
-save_dir: ./results/nqmix_humanoid  # Where to save logs, models, TensorBoard
+save_dir: ./results/nqmix_humanoid_v1  

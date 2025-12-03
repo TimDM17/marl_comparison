@@ -1,69 +1,58 @@
-# ================================================================
-# FACMAC Configuration for MaMuJoCo Humanoid
-# ================================================================
-# FACMAC-nonmonotonic variant: Uses non-monotonic mixing network
-# Paper shows this often outperforms monotonic version (Figure 9, pg 11)
-#
-# Key differences from NQMIX:
-# 1. Single joint actor optimizer (vs per-agent optimizers)
-# 2. Direct policy gradient (vs sign-based gradient)
-
-# Algorithm selection
 algorithm: facmac
 
 # ================================================================
 # ENVIRONMENT SETTINGS
 # ================================================================
-env_name: Humanoid      # MuJoCo environment (Humanoid, Ant, HalfCheetah, etc.)
-partitioning: "9|8"     # Action split: agent_0 gets 9 dims, agent_1 gets 8 dims
+env_name: Humanoid      
+partitioning: "9|8"     
 
 # ================================================================
 # TRAINING SETTINGS
 # ================================================================
-n_episodes: 3000        # Total training episodes
-max_steps: 1000         # Max timesteps per episode (handled internally by env)
-batch_size: 16          # Episodes sampled per training update
-seed: 42                # Random seed for reproducibility
+n_episodes: 150000     
+max_steps: 1000         
+batch_size: 32          
+train_every: 1         
+train_steps: 10          
+seed: 42                
 
 # ================================================================
 # EVALUATION SETTINGS
 # ================================================================
-eval_freq: 100          # Evaluate every N episodes
-n_eval_episodes: 10     # Episodes per evaluation (averaged for stability)
-log_freq: 10            # Log training metrics every N episodes
+eval_freq: 50          
+n_eval_episodes: 10     
+log_freq: 10            
 
 # ================================================================
 # EXPLORATION NOISE SETTINGS
 # ================================================================
-# Gaussian noise added to actions for exploration
-# Decays exponentially from start to end over decay_episodes
-noise_scale_start: 0.12   # Initial noise std (high exploration)
-noise_scale_end: 0.02     # Final noise std (low exploration)
-noise_decay_episodes: 1500 # Episodes to decay from start to end
+noise_scale_start: 0.15   
+noise_scale_end: 0.05     
+noise_decay_episodes: 50000 
 
 # ================================================================
 # AGENT HYPERPARAMETERS
 # ================================================================
 agent_params:
-  # Network architecture
-  hidden_dim: 64          # GRU hidden state size (paper uses 64)
+  
+  hidden_dim: 128         
 
-  # Learning rates
-  lr_actor: 0.0003        # Actor network learning rate
-  lr_critic: 0.0003       # Critic network learning rate
+  # Learning rates 
+  lr_actor: 0.0025        
+  lr_critic: 0.0005       
 
   # RL hyperparameters
-  gamma: 0.99             # Discount factor for future rewards
-  tau: 0.005              # Soft target update rate (0.005 = faster than NQMIX)
+  gamma: 0.99             
+  tau: 0.001              
 
-  # Replay buffer
-  buffer_capacity: 5000   # Max episodes stored (older episodes discarded)
+  
+  buffer_capacity: 500000  
 
-  # Action bounds (must match environment)
-  action_low: -0.4        # Minimum action value for Humanoid
-  action_high: 0.4        # Maximum action value for Humanoid
+  
+  action_low: -0.4        
+  action_high: 0.4        
 
 # ================================================================
 # OUTPUT SETTINGS
 # ================================================================
-save_dir: ./results/facmac_humanoid  # Where to save logs, models, TensorBoard
+save_dir: ./results/facmac_humanoid_v2  # Where to save logs, models, TensorBoard

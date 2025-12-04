@@ -180,33 +180,60 @@ def main():
     logger.info("")
 
     logger.info("="*70)
-    logger.info("HYPERPARAMETERS")
+    logger.info("CONFIGURATION")
     logger.info("="*70)
-    
-    # Training settings
-    logger.info(f"Episodes:          {config.get('n_episodes', 1000)}")
-    logger.info(f"Batch size:        {config.get('batch_size', 32)}")
-    logger.info(f"Eval frequency:    {config.get('eval_freq', 100)}")
-    logger.info(f"Log frequency:     {config.get('log_freq', 10)}")
+
+    # Algorithm
+    logger.info(f"Algorithm:         {config.get('algorithm', 'nqmix').upper()}")
     logger.info("")
-    
+
+    # Environment settings
+    logger.info("Environment:")
+    logger.info(f"  env_name:          {config.get('env_name', 'Humanoid')}")
+    logger.info(f"  partitioning:      {config.get('partitioning', '9|8')}")
+    logger.info("")
+
+    # Training settings
+    logger.info("Training Settings:")
+    logger.info(f"  n_episodes:        {config.get('n_episodes', 1000)}")
+    logger.info(f"  max_steps:         {config.get('max_steps', 1000)}")
+    logger.info(f"  batch_size:        {config.get('batch_size', 32)}")
+    logger.info(f"  train_every:       {config.get('train_every', 1)} episodes")
+    logger.info(f"  train_steps:       {config.get('train_steps', 1)}")
+    logger.info(f"  seed:              {seed}")
+    logger.info("")
+
+    # Evaluation settings
+    logger.info("Evaluation Settings:")
+    logger.info(f"  eval_freq:         {config.get('eval_freq', 100)}")
+    logger.info(f"  n_eval_episodes:   {config.get('n_eval_episodes', 10)}")
+    logger.info(f"  log_freq:          {config.get('log_freq', 10)}")
+    logger.info("")
+
+    # Exploration settings
+    logger.info("Exploration:")
+    logger.info(f"  noise_scale_start: {config.get('noise_scale_start', 0.12)}")
+    logger.info(f"  noise_scale_end:   {config.get('noise_scale_end', 0.02)}")
+    logger.info(f"  noise_decay_eps:   {config.get('noise_decay_episodes', 1500)}")
+    logger.info("")
+
     # Agent parameters
     agent_params = config.get('agent_params', {})
-    logger.info("Agent:")
+    logger.info("Agent Parameters:")
     logger.info(f"  hidden_dim:        {agent_params.get('hidden_dim', 64)}")
     logger.info(f"  lr_actor:          {agent_params.get('lr_actor', 5e-4)}")
     logger.info(f"  lr_critic:         {agent_params.get('lr_critic', 5e-4)}")
     logger.info(f"  gamma:             {agent_params.get('gamma', 0.99)}")
     logger.info(f"  tau:               {agent_params.get('tau', 0.001)}")
     logger.info(f"  buffer_capacity:   {agent_params.get('buffer_capacity', 5000)}")
-    logger.info(f"  action_bounds:     [{agent_params.get('action_low', -0.4)}, {agent_params.get('action_high', 0.4)}]")
+    logger.info(f"  action_low:        {agent_params.get('action_low', -0.4)}")
+    logger.info(f"  action_high:       {agent_params.get('action_high', 0.4)}")
     logger.info("")
-    
-    # Exploration settings
-    logger.info("Exploration:")
-    logger.info(f"  noise_start:       {config.get('noise_scale_start', 0.12)}")
-    logger.info(f"  noise_end:         {config.get('noise_scale_end', 0.02)}")
-    logger.info(f"  noise_decay_eps:   {config.get('noise_decay_episodes', 1500)}")
+
+    # Output settings
+    logger.info("Output:")
+    logger.info(f"  save_dir:          {config.get('save_dir', './results/default')}")
+    logger.info(f"  run_dir:           {save_dir}")
     logger.info("="*70)
     logger.info("")
 
@@ -218,15 +245,18 @@ def main():
     partitioning = config.get('partitioning', '9|8')
     env = MaMuJoCoWrapper(env_name=env_name, partitioning=partitioning)
 
-    logger.info(f"Environment: {env_name} ({partitioning})")
-    logger.info(f"Agents: {env.n_agents}, Obs dims: {env.obs_dims}, Action dims: {env.action_dims}")
+    logger.info("Environment created:")
+    logger.info(f"  n_agents:          {env.n_agents}")
+    logger.info(f"  obs_dims:          {env.obs_dims}")
+    logger.info(f"  action_dims:       {env.action_dims}")
+    logger.info(f"  state_dim:         {env.state_dim}")
+    logger.info("")
 
     # ================================================================
     # CREATE AGENT
     # ================================================================
     agent = create_agent(config, env)
-    logger.info(f"Algorithm: {config.get('algorithm', 'nqmix').upper()}")
-    logger.info(f"Device: {agent.device}")
+    logger.info(f"Agent created on device: {agent.device}")
     logger.info("")
 
     # ================================================================

@@ -5,55 +5,58 @@ algorithm: facmac
 # ================================================================
 env_name: Humanoid
 partitioning: "9|8"
-n_envs: 8               # Number of parallel environments (1 = no vectorization)     
-
+n_envs: 8               
 # ================================================================
 # TRAINING SETTINGS
 # ================================================================
-n_episodes: 150000     
-max_steps: 1000         
-batch_size: 32          
-train_every: 1         
-train_steps: 10          
-seed: 42                
+n_episodes: 150000
+max_steps: 1000
+batch_size: 100          
+train_every: 1
+train_steps: 1
+seed: 42
 
 # ================================================================
 # EVALUATION SETTINGS
 # ================================================================
-eval_freq: 400          # Evaluate every 400 episodes (50 iterations with 8 envs)          
-n_eval_episodes: 10     
-log_freq: 10            
+eval_freq: 100           
+n_eval_episodes: 10
+log_freq: 10
 
 # ================================================================
 # EXPLORATION NOISE SETTINGS
 # ================================================================
-noise_scale_start: 0.15   
-noise_scale_end: 0.05     
-noise_decay_episodes: 50000 
+noise_scale_start: 0.1    
+noise_scale_end: 0.0      
+noise_decay_episodes: 100 
 
 # ================================================================
-# AGENT HYPERPARAMETERS
+# BUFFER WARMUP (NEW - critical for stable training)
+# ================================================================
+buffer_warmup: 1000       
+
+# ================================================================
+# AGENT HYPERPARAMETERS 
 # ================================================================
 agent_params:
-  
-  hidden_dim: 128         
+  hidden_dim: 400
 
   # Learning rates 
-  lr_actor: 0.0025        
-  lr_critic: 0.0005       
+  lr_actor: 0.001
+  lr_critic: 0.001
 
   # RL hyperparameters
-  gamma: 0.99             
+  gamma: 0.99
   tau: 0.001              
 
-  
-  buffer_capacity: 500000  
+  # Buffer 
+  buffer_capacity: 1000000
 
-  
-  action_low: -0.4        
-  action_high: 0.4        
+  # Action bounds for Humanoid
+  action_low: -0.4
+  action_high: 0.4
 
 # ================================================================
 # OUTPUT SETTINGS
 # ================================================================
-save_dir: ./results/facmac_humanoid_v2  # Where to save logs, models, TensorBoard
+save_dir: ./results/facmac_humanoid_v3

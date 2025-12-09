@@ -146,43 +146,56 @@ class NQMIX(BaseAgent):
         # mixer_target.parameters() == mixer_eval.parameters() ✓
 
         # ======================================================================
-        # CRITIC OPTIMIZER (single optimizer for all critic components)
+        # CRITIC OPTIMIZER - ONLY critic parameters, NOT actor!
         # ======================================================================
-        # Paper: "We use RMSprop for learning critic parameters with lr=5e-4"
+        # FIX: Original code included ALL agent_eval parameters (including actor)
+        # This caused actor to be updated by BOTH optimizers - wrong!
 
-        # Critic includes:
-        # 1. All agent network's critic heads (Q_a estimation)
-        # 2. Mixing network (Q_tot estimation)
+        # Critic includes ONLY:
+        # 1. Shared encoder (fc1, gru) - needed for Q-value computation
+        # 2. Critic heads (critic_fc, critic_out)
+        # 3. Mixing network
 
-        # Why single optimizer?
-        # - All these components work together to estimate Q_tot
-        # - Gradient Flows: Q_tot -> mixer -> individual Q_values -> agent critics
-        # - Joint optmization ensures consistency
-        
-        self.critic_optimizer = torch.optim.RMSprop(
-            list(self.agent_eval.parameters()) + list(self.mixer_eval.parameters()),
-            lr=lr_critic
+        critic_params = []
+        for agent in self.agent_eval:
+            # Only include critic layers (NOT actor_fc/actor_out)
+            critic_params += list(agent.fc1.parameters())
+            critic_params += list(agent.gru.parameters())
+            critic_params += list(agent.critic_fc.parameters())
+            critic_params += list(agent.critic_out.parameters())
+        critic_params += list(self.mixer_eval.parameters())
+        self.critic_params = critic_params  # Store for gradient clipping in train_step
+
+        # Use Adam optimizer as per reference (optimizer: adam)
+        self.critic_optimizer = torch.optim.Adam(
+            critic_params,
+            lr=lr_critic,
+            eps=0.01  # Reference: optimizer_epsilon: 0.01
         )
 
 
         # ======================================================================
         # ACTOR OPTIMIZERS (separate optimizer per agent's actor)
         # ======================================================================
-        # Paper: "We use RMSprop for learning each actor policy parameters 
-        #         with lr=5e-4"
-
         # Why separate optimizers?
         # - Each agent's actor updated independently with sign-based gradient
         # - sign(∂Q_tot/∂Q_i) different for each agent
         # - Agent i's actor only updates its own policy parameters
 
-        # Only optimize actor-specific layers (not entire network)
-        self.actor_optimizers = [
-            torch.optim.RMSprop(
-                list(agent.actor_fc.parameters()) + list(agent.actor_out.parameters()),
-                lr=lr_actor
-            )
+        # Store actor params for gradient clipping in train_step
+        self.actor_params_list = [
+            list(agent.actor_fc.parameters()) + list(agent.actor_out.parameters())
             for agent in self.agent_eval
+        ]
+
+        # Use Adam optimizer as per reference (optimizer: adam)
+        self.actor_optimizers = [
+            torch.optim.Adam(
+                params,
+                lr=lr_actor,
+                eps=0.01  # Reference: optimizer_epsilon: 0.01
+            )
+            for params in self.actor_params_list
         ]
             
 
@@ -356,17 +369,21 @@ class NQMIX(BaseAgent):
     
     def train_step(self, batch_size: int = 32) -> Optional[Dict[str, float]]:
         """
-        Training step implementing Algorithm 2 from NQMIX paper.
+        Training step implementing Algorithm 2 from NQMIX paper (CORRECTED: Batched updates).
+
+        FIXED: Now accumulates gradients across entire batch, then updates once.
+        Research-standard implementation: 1 gradient update per train_step (not per timestep!)
 
         Algorithm 2 structure:
         1. Sample mini-batch of episodes (Line 4)
         2. For each episode:
            a. Initialize discount accumulator I = 1 (Line 5)
            b. For each timestep t (Line 6):
-              - Critic update: Minimize TD error (Lines 7-12)
-              - Actor update: Sign-based gradient (Line 13)
+              - Accumulate critic loss (Lines 7-12)
+              - Accumulate actor loss (Line 13)
               - Decay I ← γ*I (Line 14)
-        3. Soft update target networks (Lines 15-16)
+        3. Single gradient update for entire batch
+        4. Soft update target networks (Lines 15-16)
 
         Returns:
             Average critic loss across batch (for monitoring)
@@ -374,11 +391,13 @@ class NQMIX(BaseAgent):
         # Wait until buffer has enough episodes
         if len(self.replay_buffer) < batch_size:
             return None
-        
+
         # Line 4: Sample mini-batch from replay buffer (OFF-POLICY!)
         episodes = self.replay_buffer.sample(batch_size)
-        total_critic_loss = 0.0
-        total_actor_loss = 0.0
+
+        # Collect losses across all episodes and timesteps (avoid in-place operations)
+        critic_losses = []
+        actor_losses = [[] for _ in range(self.n_agents)]  # Per-agent loss lists
 
         # Process each episode in the batch
         for episode in episodes:
@@ -400,9 +419,6 @@ class NQMIX(BaseAgent):
                            for agent in self.agent_eval]
             hiddens_target = [agent.init_hidden(1).to(self.device)
                              for agent in self.agent_target]
-
-            episode_critic_loss = 0.0
-            episode_actor_loss = 0.0
 
             # Line 5: I ← 1 (Discount accumulator for multi-step updates)
             # Purpose: Weight gradients by temporal discount γ^t
@@ -459,7 +475,7 @@ class NQMIX(BaseAgent):
                     with torch.no_grad():
                         q_values_target = []
                         new_hiddens_target = []
-                        
+
                         for i in range(self.n_agents):
                             # Line 8: Get action from target policy
                             # μ_a(τ_{t+1}^a|θ') - what would target policy do?
@@ -468,13 +484,13 @@ class NQMIX(BaseAgent):
                                 actions_t[i],  # Last action at t (for GRU input)
                                 hiddens_target[i]
                             )
-                            
-                            # Evaluate Q-value for target action
+
+                            # FIXED: Evaluate Q-value with UPDATED hidden state
                             # Q'_a(τ_{t+1}^a, μ_a(τ_{t+1}^a|θ'))
                             q_val, _, _ = self.agent_target[i](
                                 obs_next[i],
                                 actions_t[i],
-                                hiddens_target[i],
+                                new_hidden_target,  # FIX: Use updated hidden state!
                                 target_action  # Evaluate target policy action
                             )
                             q_values_target.append(q_val)
@@ -493,23 +509,13 @@ class NQMIX(BaseAgent):
                 # Line 11: Compute TD error
                 # δ = target - current = [R + γ*Q'_tot] - Q_tot
                 td_error = td_target.detach() - q_tot
-                
+
                 # Line 12: Critic loss = δ²
                 # Minimize squared TD error (standard Q-learning)
                 critic_loss = td_error.pow(2).mean()
 
-                # Update critic parameters
-                self.critic_optimizer.zero_grad()
-                critic_loss.backward()
-                
-                # Gradient clipping prevents exploding gradients
-                torch.nn.utils.clip_grad_norm_(
-                    list(self.agent_eval.parameters()) + list(self.mixer_eval.parameters()),
-                    max_norm=10.0
-                )
-                self.critic_optimizer.step()
-
-                episode_critic_loss += critic_loss.item()
+                # Accumulate loss (don't update yet!)
+                critic_losses.append(critic_loss)
 
                 # ========================================================
                 # DETACH HIDDEN STATES (Memory Management)
@@ -553,7 +559,7 @@ class NQMIX(BaseAgent):
                 # Step 3: Compute joint Q-value for gradient computation
                 q_tot_for_actor = self.mixer_eval(q_values_for_actor, state_t.detach())
 
-                # Step 4: Update each agent's actor with sign-based gradient
+                # Step 4: Accumulate each agent's actor loss with sign-based gradient
                 # Line 13: θ ← θ + α·I·sign(∂Q_tot/∂Q_a)·∇_θμ_a·∇_uQ_a
                 for i in range(self.n_agents):
                     # Compute ∂Q_tot/∂Q_a (how Q_tot changes with Q_a)
@@ -573,42 +579,55 @@ class NQMIX(BaseAgent):
                         # sign > 0: Agent helps team → gradient ASCENT (maximize Q_a)
                         # sign < 0: Agent hurts team → gradient DESCENT (minimize Q_a)
                         sign_grad = torch.sign(grad_q_tot_wrt_qa).detach()
-                    
+
                     # Actor loss with sign weighting and temporal discount I
                     # Negative sign for gradient ascent when sign_grad > 0
                     actor_loss = -(sign_grad * q_values_for_actor[i] * I).mean()
-                    
-                    # Update this agent's actor parameters
-                    self.actor_optimizers[i].zero_grad()
-                    actor_loss.backward(retain_graph=(i < self.n_agents - 1))
-                    
-                    # Gradient clipping for stability
-                    torch.nn.utils.clip_grad_norm_(
-                        list(self.agent_eval[i].actor_fc.parameters()) +
-                        list(self.agent_eval[i].actor_out.parameters()),
-                        max_norm=10.0
-                    )
-                    self.actor_optimizers[i].step()
-                    
-                    episode_actor_loss += actor_loss.item()
+
+                    # Accumulate loss (don't update yet!)
+                    actor_losses[i].append(actor_loss)
 
                 # Line 14: I ← γ·I (Decay discount accumulator)
                 # After T steps: I = γ^T (weights later timesteps less)
                 I *= self.gamma
 
-            # Accumulate losses across episodes
-            total_critic_loss += episode_critic_loss
-            total_actor_loss += episode_actor_loss
+        # ============================================================
+        # SINGLE GRADIENT UPDATE FOR ENTIRE BATCH
+        # ============================================================
+        # Average loss over all transitions in batch
+        avg_critic_loss = torch.stack(critic_losses).mean()
+
+        # CRITICAL: Compute ALL gradients BEFORE any optimizer.step()
+        # (optimizer.step() modifies parameters in-place, breaking the graph)
+
+        # Compute critic gradients
+        self.critic_optimizer.zero_grad()
+        avg_critic_loss.backward(retain_graph=True)  # Keep graph for actor backwards
+        # Reference: grad_norm_clip: 0.5 (NOT 10.0!)
+        torch.nn.utils.clip_grad_norm_(self.critic_params, max_norm=0.5)
+
+        # Compute ALL actor gradients (before any .step() modifies parameters!)
+        avg_actor_losses = []
+        for i in range(self.n_agents):
+            avg_actor_loss = torch.stack(actor_losses[i]).mean()
+            avg_actor_losses.append(avg_actor_loss.item())
+
+            self.actor_optimizers[i].zero_grad()
+            avg_actor_loss.backward(retain_graph=(i < self.n_agents - 1))  # Keep for other agents
+            # Reference: grad_norm_clip: 0.5 (NOT 10.0!)
+            torch.nn.utils.clip_grad_norm_(self.actor_params_list[i], max_norm=0.5)
+
+        # Now apply all gradient updates
+        self.critic_optimizer.step()
+        for i in range(self.n_agents):
+            self.actor_optimizers[i].step()
 
         # Line 15-16: Soft update target networks
         # θ' ← τ·θ + (1-τ)·θ' (slow tracking for stability)
         self._soft_update()
 
         # Return average losses for monitoring
-        avg_critic_loss = total_critic_loss / len(episodes)
-        avg_actor_loss = total_actor_loss / len(episodes)
-
-        return avg_critic_loss
+        return avg_critic_loss.item()
     
     
     def save(self, path: str) -> None:

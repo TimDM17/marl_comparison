@@ -213,9 +213,14 @@ def main():
 
     # Exploration settings
     logger.info("Exploration:")
-    logger.info(f"  noise_scale_start: {config.get('noise_scale_start', 0.12)}")
-    logger.info(f"  noise_scale_end:   {config.get('noise_scale_end', 0.02)}")
-    logger.info(f"  noise_decay_eps:   {config.get('noise_decay_episodes', 1500)}")
+    logger.info(f"  noise_scale_start: {config.get('noise_scale_start', 0.1)}")
+    logger.info(f"  noise_scale_end:   {config.get('noise_scale_end', 0.0)}")
+    logger.info(f"  noise_decay_eps:   {config.get('noise_decay_episodes', 100)}")
+    logger.info("")
+
+    # Buffer warmup
+    logger.info("Buffer Warmup:")
+    logger.info(f"  buffer_warmup:     {config.get('buffer_warmup', config.get('batch_size', 32) * 2)}")
     logger.info("")
 
     # Agent parameters
@@ -302,6 +307,10 @@ def main():
     # ================================================================
     # CREATE TRAINER
     # ================================================================
+    # Buffer warmup - Reference uses buffer_warmup: 1000
+    # This ensures enough diverse experience before training starts
+    buffer_warmup = config.get('buffer_warmup', config.get('batch_size', 32) * 2)
+
     trainer = Trainer(
         agent=agent,
         env=env,
@@ -315,7 +324,7 @@ def main():
         noise_decay=noise_decay,
         min_noise=noise_end,
         eval_every=config.get('eval_freq', 100),
-        min_buffer_size=config.get('batch_size', 32) * 2,  # Need 2x batch for stable training
+        min_buffer_size=buffer_warmup,  # Use buffer_warmup from config
         log_every=config.get('log_freq', 10)
     )
 

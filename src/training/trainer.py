@@ -38,7 +38,7 @@ class Trainer:
     def __init__(
         self,
         agent: "BaseAgent",
-        env: "MaMuJoCoWrapper",
+        env, 
         logger: "Logger",
         evaluator: Optional["Evaluator"] = None,
         # Training parameters
@@ -81,6 +81,14 @@ class Trainer:
         self.logger = logger
         self.evaluator = evaluator
 
+        # Detect if we're using vectorized environments
+        self.is_vectorized = hasattr(env, 'n_envs')
+        self.n_envs = env.n_envs if self.is_vectorized else 1
+
+        if self.is_vectorized:
+            self.logger.info(f"Using vectorized training with {self.n_envs} parallel environments")
+
+
         # Training parameters
         self.total_episodes = total_episodes
         self.batch_size = batch_size
@@ -119,11 +127,24 @@ class Trainer:
         self.logger.info(f"Starting training for {self.total_episodes} episodes")
         self.start_time = time.time()
 
-        for episode in range(1, self.total_episodes + 1):
-            # Collect episode
-            episode_reward, episode_length = self._collect_episode()
-            self.episode_rewards.append(episode_reward)
-            self.episode_lengths.append(episode_length)
+        episodes_collected = 0
+
+        while episodes_collected < self.total_episodes:
+            if self.is_vectorized:
+                # Collect from vectorized environments
+                rewards, lengths = self._collect_episode_vectorized()
+                self.episode_rewards.extend(rewards)
+                self.episode_lengths.extend(lengths)
+                episodes_collected += self.n_envs
+            else:
+                # Collect single episode (backward compatibility)
+                reward, length = self._collect_episode()
+                self.episode_rewards.append(reward)
+                self.episode_lengths.append(length)
+                episodes_collected += 1
+
+            # Current episode number for logging
+            episode = episodes_collected
 
             # Train if buffer is ready
             if self._can_train() and episode % self.train_every == 0:
@@ -142,8 +163,8 @@ class Trainer:
             if episode % self.log_every == 0:
                 self._log_training(episode)
 
-            # Evaluate
-            if self.evaluator and episode % self.eval_every == 0:
+            # Evaluate (check if we've reached eval milestone)
+            if self.evaluator and episode // self.eval_every > (episode - self.n_envs) // self.eval_every:
                 self.evaluator.evaluate(episode)
 
         self.logger.info("Training complete!")
@@ -241,6 +262,140 @@ class Trainer:
         self.agent.store_episode(episode_data)
 
         return total_reward, episode_length
+    
+    def _collect_episode_vectorized(self) -> Tuple[List[float], List[int]]:
+        """
+        Collect episodes from vectorized environments in parallel.
+
+        This method runs all environments simultaneously and collects
+        complete episodes from each. Returns when all environments
+        have completed one episode.
+
+        Returns:
+            episode_rewards: List of rewards from each environment
+            episode_lengths: List of lengths from each environment
+        """
+        # Reset all environments
+        observations_list = self.env.reset()  # [n_envs, n_agents, obs_dim]
+
+        # Initialize hidden states for each environment
+        hiddens_list = [
+            self.agent.init_hidden_states()
+            for _ in range(self.n_envs)
+        ]
+
+        # Initialize last actions for each environment
+        last_actions_list = [
+            [np.zeros(self.env.action_dims[i]) for i in range(self.env.n_agents)]
+            for _ in range(self.n_envs)
+        ]
+
+        # Episode storage for each environment
+        episode_data_list = [
+            {
+                'observations': [[] for _ in range(self.env.n_agents)],
+                'actions': [[] for _ in range(self.env.n_agents)],
+                'last_actions': [[] for _ in range(self.env.n_agents)],
+                'states': [],
+                'rewards': []
+            }
+            for _ in range(self.n_envs)
+        ]
+
+        # Track which environments are still running
+        dones = [False] * self.n_envs
+        episode_rewards = [0.0] * self.n_envs
+        episode_lengths = [0] * self.n_envs
+
+        while not all(dones):
+            # Prepare batched observations for agent
+            # Only process environments that aren't done yet
+            active_indices = [i for i, done in enumerate(dones) if not done]
+
+            if not active_indices:
+                break
+
+            # Get actions for all active environments (batched)
+            actions_list = []
+            new_hiddens_list = []
+
+            for env_idx in range(self.n_envs):
+                if dones[env_idx]:
+                    # Placeholder for done environments
+                    actions_list.append(None)
+                    new_hiddens_list.append(None)
+                else:
+                    # Select actions for this environment
+                    actions, hiddens = self.agent.select_actions(
+                        observations=observations_list[env_idx],
+                        last_actions=last_actions_list[env_idx],
+                        hiddens=hiddens_list[env_idx],
+                        explore=True,
+                        noise_scale=self.current_noise
+                    )
+
+                    # Detach hidden states
+                    hiddens = [h.detach() if hasattr(h, 'detach') else h for h in hiddens]
+
+                    actions_list.append(actions)
+                    new_hiddens_list.append(hiddens)
+                    hiddens_list[env_idx] = hiddens
+
+                    # Store transition for this environment
+                    for agent_idx in range(self.env.n_agents):
+                        episode_data_list[env_idx]['observations'][agent_idx].append(
+                            observations_list[env_idx][agent_idx]
+                        )
+                        episode_data_list[env_idx]['last_actions'][agent_idx].append(
+                            last_actions_list[env_idx][agent_idx]
+                        )
+                        episode_data_list[env_idx]['actions'][agent_idx].append(actions[agent_idx])
+
+                    # Store global state
+                    state = np.concatenate(observations_list[env_idx])
+                    episode_data_list[env_idx]['states'].append(state)
+
+            # Execute step in all environments (only non-None actions)
+            step_actions = [act for act in actions_list if act is not None]
+            if not step_actions:
+                break
+
+            # Create full actions list (with placeholders for done envs)
+            full_actions_list = []
+            active_idx = 0
+            for env_idx in range(self.n_envs):
+                if dones[env_idx]:
+                    # Send dummy actions for done envs (they won't be used)
+                    full_actions_list.append(
+                        [np.zeros(dim) for dim in self.env.action_dims]
+                    )
+                else:
+                    full_actions_list.append(step_actions[active_idx])
+                    active_idx += 1
+
+            # Step all environments
+            observations_list, rewards_list, dones_list, infos_list = self.env.step(full_actions_list)
+
+            # Process results
+            for env_idx in range(self.n_envs):
+                if not dones[env_idx]:  # Only update active environments
+                    reward = rewards_list[env_idx]
+                    episode_data_list[env_idx]['rewards'].append(reward)
+                    episode_rewards[env_idx] += reward
+                    episode_lengths[env_idx] += 1
+                    self.total_timesteps += 1
+
+                    # Update last actions
+                    if actions_list[env_idx] is not None:
+                        last_actions_list[env_idx] = actions_list[env_idx]
+
+                    # Check if this environment is done
+                    if dones_list[env_idx]:
+                        dones[env_idx] = True
+                        # Store complete episode
+                        self.agent.store_episode(episode_data_list[env_idx])
+
+        return episode_rewards, episode_lengths
 
     def _can_train(self) -> bool:
         """Check if training can start based on buffer size."""

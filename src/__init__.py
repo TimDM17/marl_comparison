@@ -5,7 +5,7 @@ Main package exports for easy access to core components.
 """
 
 from src.agents import NQMIX, FACMAC
-from src.envs import MaMuJoCoWrapper
+from src.envs import MaMuJoCoWrapper, VectorizedMaMuJoCoWrapper
 from src.training import Trainer, Evaluator
 from src.utils import Logger, load_config, save_config
 
@@ -15,6 +15,7 @@ __all__ = [
     'NQMIX',
     # Environments
     'MaMuJoCoWrapper',
+    'VectorizedMaMuJoCoWrapper',
     # Training
     'Trainer',
     'Evaluator',

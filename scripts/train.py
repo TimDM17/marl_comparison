@@ -34,7 +34,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from src import NQMIX, FACMAC
-from src.envs import MaMuJoCoWrapper
+from src.envs import MaMuJoCoWrapper, VectorizedMaMuJoCoWrapper
 from src.training import Trainer, Evaluator
 from src.utils import load_config, Logger
 
@@ -191,6 +191,7 @@ def main():
     logger.info("Environment:")
     logger.info(f"  env_name:          {config.get('env_name', 'Humanoid')}")
     logger.info(f"  partitioning:      {config.get('partitioning', '9|8')}")
+    logger.info(f"  n_envs:            {config.get('n_envs', 1)}")
     logger.info("")
 
     # Training settings
@@ -243,9 +244,22 @@ def main():
     # ================================================================
     env_name = config.get('env_name', 'Humanoid')
     partitioning = config.get('partitioning', '9|8')
-    env = MaMuJoCoWrapper(env_name=env_name, partitioning=partitioning)
+    n_envs = config.get('n_envs', 1)
 
-    logger.info("Environment created:")
+    if n_envs > 1:
+        # Use vectorized environments for parallel collection
+        env = VectorizedMaMuJoCoWrapper(
+            env_name=env_name,
+            partitioning=partitioning,
+            n_envs=n_envs
+        )
+        logger.info(f"Created {n_envs} vectorized environments")
+    else:
+        # Use single environment (backward compatibility)
+        env = MaMuJoCoWrapper(env_name=env_name, partitioning=partitioning)
+        logger.info("Created single environment")
+
+    logger.info("Environment configuration:")
     logger.info(f"  n_agents:          {env.n_agents}")
     logger.info(f"  obs_dims:          {env.obs_dims}")
     logger.info(f"  action_dims:       {env.action_dims}")

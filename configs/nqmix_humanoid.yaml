@@ -8,6 +8,7 @@ algorithm: nqmix
 # ================================================================
 env_name: Humanoid
 partitioning: "9|8"
+n_envs: 8               # Number of parallel environments (1 = no vectorization)
 
 # ================================================================
 # TRAINING SETTINGS
@@ -22,7 +23,7 @@ seed: 42
 # ================================================================
 # EVALUATION SETTINGS
 # ================================================================
-eval_freq: 50
+eval_freq: 400          # Evaluate every 400 episodes (50 iterations with 8 envs)
 n_eval_episodes: 10
 log_freq: 10
 

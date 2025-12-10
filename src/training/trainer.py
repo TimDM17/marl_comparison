@@ -232,7 +232,8 @@ class Trainer:
             'actions': [[] for _ in range(self.env.n_agents)],
             'last_actions': [[] for _ in range(self.env.n_agents)],
             'states': [],
-            'rewards': []
+            'rewards': [],
+            'terminated': []  # Track terminal states for proper TD targets
         }
 
         total_reward = 0.0
@@ -285,6 +286,11 @@ class Trainer:
                 raise ValueError(f"Expected shared reward, got different rewards: {rewards}")
             reward = rewards[0]
             episode_data['rewards'].append(reward)
+
+            # Store terminated signal (True if episode ended naturally, not truncated)
+            # This is critical for TD targets: terminal states should NOT bootstrap
+            is_terminated = any(terminated_dict.values())
+            episode_data['terminated'].append(is_terminated)
 
             # Update for next step
             observations = [obs_dict[agent_id] for agent_id in self.env.possible_agents]
@@ -351,7 +357,8 @@ class Trainer:
                 'actions': [[] for _ in range(self.env.n_agents)],
                 'last_actions': [[] for _ in range(self.env.n_agents)],
                 'states': [],
-                'rewards': []
+                'rewards': [],
+                'terminated': []  # Track terminal states for proper TD targets
             }
             for _ in range(self.n_envs)
         ]
@@ -456,6 +463,15 @@ class Trainer:
                 episode_rewards[env_idx] += reward
                 episode_lengths[env_idx] += 1
                 self.total_timesteps += 1
+
+                # Store terminated signal
+                # Check infos for truncation info, otherwise use done signal
+                # Terminal = episode ended naturally (should NOT bootstrap)
+                # Truncated = hit time limit (SHOULD bootstrap, but we approximate as non-terminal)
+                info = infos_list[env_idx] if env_idx < len(infos_list) else {}
+                is_truncated = info.get('TimeLimit.truncated', False) or info.get('truncated', False)
+                is_terminated = dones_list[env_idx] and not is_truncated
+                episode_data_list[env_idx]['terminated'].append(is_terminated)
 
                 # Update last actions
                 last_actions_list[env_idx] = actions_list[env_idx]

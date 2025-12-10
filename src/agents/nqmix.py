@@ -482,6 +482,7 @@ class NQMIX(BaseAgent):
         states = batch['states']                  # [B, T, state_dim]
         rewards = batch['rewards']                # [B, T, 1]
         mask = batch['mask']                      # [B, T, 1]
+        terminated = batch['terminated']          # [B, T, 1] - 1 if terminal, 0 otherwise
         max_seq_length = batch['max_seq_length']
         B = batch['batch_size']
 
@@ -593,22 +594,23 @@ class NQMIX(BaseAgent):
         q_taken = torch.stack(q_taken_list, dim=1)  # [B, T, 1]
         target_q = torch.stack(target_q_list, dim=1)
 
-        # TD targets with shifted target Q
+        # TD targets with shifted target Q: r_t + gamma * (1 - terminated) * Q'(s_{t+1})
         target_q_shifted = torch.zeros_like(target_q)
         target_q_shifted[:, :-1, :] = target_q[:, 1:, :]
 
-        # CRITICAL FIX: Create mask for valid TD targets
-        # A timestep has valid TD target ONLY if the NEXT timestep is also valid
-        # This excludes: (1) last valid timestep of each episode, (2) all padded timesteps
-        # Without this, we use garbage Q'(padded_state) causing loss explosion!
+        # Create mask for valid timesteps (exclude padding)
+        # We need next timestep to be valid for TD target
         mask_shifted = torch.zeros_like(mask)
         mask_shifted[:, :-1, :] = mask[:, 1:, :]  # Shift mask by 1
         mask_for_critic = mask * mask_shifted  # Both current AND next must be valid
 
-        td_targets = rewards + self.gamma * target_q_shifted
+        # TD target with proper terminal handling (reference: facmac_learner.py line 105)
+        # For terminal states: target = reward (no bootstrap, gamma * 0 * Q' = 0)
+        # For non-terminal: target = reward + gamma * Q'
+        td_targets = rewards + self.gamma * (1.0 - terminated) * target_q_shifted
         td_error = td_targets.detach() - q_taken
 
-        # Masked TD error (only include timesteps with valid next state)
+        # Masked TD error (only include valid timesteps)
         masked_td_error = td_error * mask_for_critic
         critic_loss = (masked_td_error ** 2).sum() / mask_for_critic.sum().clamp(min=1)
 

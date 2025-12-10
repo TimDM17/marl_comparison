@@ -149,6 +149,7 @@ class ReplayBuffer:
         states_np = np.zeros((actual_batch_size, max_seq_length, state_dim), dtype=np.float32)
         rewards_np = np.zeros((actual_batch_size, max_seq_length, 1), dtype=np.float32)
         mask_np = np.zeros((actual_batch_size, max_seq_length, 1), dtype=np.float32)
+        terminated_np = np.zeros((actual_batch_size, max_seq_length, 1), dtype=np.float32)
 
         # Fill numpy arrays with episode data (CPU operations)
         for b, episode in enumerate(episodes):
@@ -168,6 +169,13 @@ class ReplayBuffer:
             # Mask: 1 for valid timesteps, 0 for padding
             mask_np[b, :ep_len, 0] = 1.0
 
+            # Terminated: 1 if this timestep is a terminal state, 0 otherwise
+            # This is critical for TD targets - terminal states should NOT bootstrap
+            if 'terminated' in episode and len(episode['terminated']) > 0:
+                terminated_np[b, :ep_len, 0] = np.array(episode['terminated'][:ep_len], dtype=np.float32)
+            # If terminated not available (backward compatibility), assume all zeros
+            # (will use the old mask-based approach)
+
         # Convert to tensors ONCE and move to device (single transfer)
         # torch.from_numpy shares memory, then .to(device) copies to GPU
         observations = [
@@ -185,6 +193,7 @@ class ReplayBuffer:
         states = torch.from_numpy(states_np).to(device)
         rewards = torch.from_numpy(rewards_np).to(device)
         mask = torch.from_numpy(mask_np).to(device)
+        terminated = torch.from_numpy(terminated_np).to(device)
 
         return {
             'observations': observations,      # List of [batch, time, obs_dim]
@@ -193,6 +202,7 @@ class ReplayBuffer:
             'states': states,                  # [batch, time, state_dim]
             'rewards': rewards,                # [batch, time, 1]
             'mask': mask,                      # [batch, time, 1]
+            'terminated': terminated,          # [batch, time, 1] - 1 if terminal, 0 otherwise
             'max_seq_length': max_seq_length,
             'batch_size': actual_batch_size
         }

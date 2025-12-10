@@ -597,13 +597,18 @@ class NQMIX(BaseAgent):
         target_q_shifted = torch.zeros_like(target_q)
         target_q_shifted[:, :-1, :] = target_q[:, 1:, :]
 
+        # CRITICAL FIX: Create mask for valid TD targets
+        # A timestep has valid TD target ONLY if the NEXT timestep is also valid
+        # This excludes: (1) last valid timestep of each episode, (2) all padded timesteps
+        # Without this, we use garbage Q'(padded_state) causing loss explosion!
+        mask_shifted = torch.zeros_like(mask)
+        mask_shifted[:, :-1, :] = mask[:, 1:, :]  # Shift mask by 1
+        mask_for_critic = mask * mask_shifted  # Both current AND next must be valid
+
         td_targets = rewards + self.gamma * target_q_shifted
         td_error = td_targets.detach() - q_taken
 
-        # Mask for critic (exclude last timestep)
-        mask_for_critic = mask.clone()
-        mask_for_critic[:, -1, :] = 0
-
+        # Masked TD error (only include timesteps with valid next state)
         masked_td_error = td_error * mask_for_critic
         critic_loss = (masked_td_error ** 2).sum() / mask_for_critic.sum().clamp(min=1)
 
